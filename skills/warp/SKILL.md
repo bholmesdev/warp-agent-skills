@@ -1,11 +1,11 @@
 ---
-name: warp
-description: Use Warp's REST API and command line to run, configure, and inspect Warp cloud agents
+name: oz-platform
+description: Use Warp's REST API and command line to run, configure, and inspect Oz cloud agents
 ---
 
-# warp
+# oz-platform
 
-Use the Warp REST API and CLI to:
+Use the Oz REST API and CLI to:
 * Spawn cloud agents
 * Get the status of a cloud agent
 * Schedule cloud agents to run repeatedly
@@ -14,13 +14,13 @@ Use the Warp REST API and CLI to:
 
 ## Command Line
 
-The Warp CLI is installed as `warp`. To get help output, use `warp help` or `warp help <subcommand>`. Prefer `--output-format text` to review the response, or `--output-format json` to parse fields with jq. You can find more information at https://docs.warp.dev/platform/cli.
+The Oz CLI is installed as `oz`. To get help output, use `oz help` or `oz help <subcommand>`. Prefer `--output-format text` to review the response, or `--output-format json` to parse fields with jq. You can find more information at https://docs.warp.dev/platform/cli.
 
 The most important commands are:
-* `warp agent run-cloud`: Spawn a new cloud agent. You can configure the prompt, model, environment, and other settings.
-* `warp run list` and `warp run get <run-id>`: List all cloud agent runs, and get details about a particular run. This includes the session link to view that session in the cloud.
-* `warp environment list` and `warp environment get`: List available environments, and get more information about a particular environment.
-* `warp schedule list` and `warp schedule get`: List scheduled tasks with most recent runs, and get more information about a particular scheduled run.
+* `oz agent run-cloud`: Spawn a new cloud agent. You can configure the prompt, model, environment, and other settings.
+* `oz run list` and `oz run get <run-id>`: List all cloud agent runs, and get details about a particular run. This includes the session link to view that session in the cloud.
+* `oz environment list` and `oz environment get`: List available environments, and get more information about a particular environment.
+* `oz schedule list` and `oz schedule get`: List scheduled tasks with most recent runs, and get more information about a particular scheduled run.
 
 Most subcommands support the `--output-format json` flag to produce JSON output, which you can pipe into `jq` or other commands.
 
@@ -29,33 +29,32 @@ Most subcommands support the `--output-format json` flag to produce JSON output,
 Start a cloud agent, and then monitor its status:
 
 ```sh
-$ warp agent run-cloud --prompt "Update the login error to be more specific" --environment UA17BXYZ
+$ oz agent run-cloud --prompt "Update the login error to be more specific" --environment UA17BXYZ
 # ...
 Spawned agent with run ID: 5972cca4-a410-42af-930a-e56bc23e07ac
 ```
 
 ```sh
-$ warp run get 5972cca4-a410-42af-930a-e56bc23e07ac
+$ oz run get 5972cca4-a410-42af-930a-e56bc23e07ac
 # ...
 ```
 
 Schedule an agent to summarize feedback every day at 8am UTC:
 
 ```sh
-$ warp schedule create --cron "0 8 * * *" \
+$ oz schedule create --name "daily-feedback-summary" --cron "0 8 * * *" \
     --prompt "Collect all feedback from new GitHub issues and provide a summary report" \
     --environment UA17BXYZ
 ```
 
-Create a secret for cloud agents to use:
+Create a secret
 
 ```sh
-$ warp secret create JIRA_API_KEY --team --value-file jira_key.txt --description "API key to access Jira"
+$ oz secret create JIRA_API_KEY --team --value-file jira_key.txt --description "API key to access Jira"
 ```
 
 ## REST API
-
-Warp has a REST API for starting and inspecting cloud agents.
+Oz has a REST API for starting and inspecting cloud agents.
 
 All API requests require authentication using an API key. The user can generate API keys in their Warp settings, on the `Platform` page (accessible via `{{warp_url_scheme}}://settings/platform`).
 
@@ -89,7 +88,7 @@ curl -L -X GET {{warp_server_url}}/api/v1/agent/runs/5972cca4-a410-42af-930a-e56
 
 ## GitHub Actions Integration
 
-You can trigger Warp cloud agents from GitHub Actions workflows. This enables automation like:
+You can trigger Oz cloud agents from GitHub Actions workflows. This enables automation like:
 * Triaging issues when they're created or labeled
 * Running checks on pull requests
 * Scheduling periodic tasks via workflow dispatch
@@ -106,7 +105,7 @@ The action outputs `agent_output` with the agent's response.
 ### Minimal Workflow Example
 
 ```yaml
-name: Run Warp Agent
+name: Run Oz Agent
 on:
   issues:
     types: [opened, labeled]
@@ -154,12 +153,103 @@ You should almost always run cloud agents in an environment. Otherwise, they may
 
 Cloud agents run in a sandbox, so they _can_ install additional programs into their environment. They also have Git credentials to create PRs and push branches.
 
-Cloud environments DO NOT store secret values, like API keys. Use the `warp secret` commands instead.
+Cloud environments DO NOT store secret values, like API keys. Use the `oz secret` commands instead.
+
+### Listing and Finding Environments
+
+List all available environments with metadata:
+
+```sh
+$ oz environment list --output-format json
+```
+
+Get details about a specific environment by ID:
+
+```sh
+$ oz environment get <ENVIRONMENT_ID> --output-format json
+```
+
+Use `jq` to filter and extract information, e.g., find environment by name:
+
+```sh
+$ oz environment list --output-format json | jq '.[] | select(.name == "Full stack") | .id'
+```
+
+### Updating Environments
+
+Modify an environment using `oz environment update <ID>`. Common options:
+* `-r, --repo owner/repo`: Add a Git repository (can be specified multiple times)
+* `--remove-repo owner/repo`: Remove a Git repository
+* `-c, --setup-command "command"`: Add a setup command
+* `--remove-setup-command "command"`: Remove a setup command
+* `-d, --docker-image IMAGE`: Change the Docker image
+* `-n, --name NAME`: Rename the environment
+* `--description TEXT`: Set a description
+
+Example: Add a repository to an environment:
+
+```sh
+$ oz environment update SGY5YoiC4lWZLA0N0lu6OT -r warpdotdev/gitbook
+```
 
 ### Creating Environments
 
-For detailed guidance on creating environments with `warp environment create`, see [create-environment.md](./create-environment.md). This includes:
+For detailed guidance on creating environments with `oz environment create`, see [create-environment.md](./create-environment.md). This includes:
 * Repository detection and analysis
 * Docker image selection (Warp pre-built images or custom)
 * Setup command determination
 * Full workflow with mandatory confirmation points
+
+## Schedules
+
+Schedules allow cloud agents to run automatically on a recurring basis using cron expressions.
+
+### Creating Schedules
+
+Use `oz schedule create` with these **required** parameters:
+* `--name <NAME>`: Unique identifier for the schedule
+* `--cron <CRON>`: Cron expression (e.g., `"0 9 * * 1"` for Mondays at 9am UTC)
+* `--environment <ID>`: Environment ID to run in
+* `--prompt <PROMPT>` or `--skill <SPEC>`: Task for the agent
+
+```sh
+$ oz schedule create --name "weekly-cleanup" --cron "0 9 * * 1" \
+    --environment iS2uiErC9g4GoyUq4z6kQA \
+    --prompt "Clean up stale branches older than 30 days"
+```
+
+Common cron patterns:
+* `"0 9 * * *"` - Daily at 9am UTC
+* `"0 9 * * 1"` - Weekly on Monday at 9am UTC
+* `"0 0 1 * *"` - Monthly on the 1st at midnight UTC
+
+### Listing and Getting Schedules
+
+```sh
+$ oz schedule list --output-format text
+$ oz schedule get <SCHEDULE_ID> --output-format text
+```
+
+### Updating Schedules
+
+Modify an existing schedule with `oz schedule update <SCHEDULE_ID>`:
+
+```sh
+# Change the cron schedule
+$ oz schedule update <SCHEDULE_ID> --cron "0 10 * * *"
+
+# Update the prompt
+$ oz schedule update <SCHEDULE_ID> --prompt "New task description"
+
+# Pause a schedule
+$ oz schedule update <SCHEDULE_ID> --paused
+
+# Resume a paused schedule
+$ oz schedule update <SCHEDULE_ID> --no-paused
+```
+
+### Deleting Schedules
+
+```sh
+$ oz schedule delete <SCHEDULE_ID>
+```
